@@ -1,0 +1,194 @@
+Node.js Authentication — Stage 1 (JWT Based)
+________________________________________
+Question 1:
+Why do we use app.use(express.json());?
+✅ Answer:
+express.json() is a built-in middleware in Express that allows your app to understand and parse JSON request bodies.
+When a client (like Postman or React) sends:
+{ "email": "user@example.com", "password": "123456" }
+then inside your route, req.body becomes:
+{ email: "user@example.com", password: "123456" }
+Without this line:
+app.use(express.json());
+you’ll get req.body = undefined — Express doesn’t automatically read request bodies.
+🧠 Summary:
+What it does	Parses JSON body
+Needed for	APIs using JSON
+Without it	req.body undefined
+________________________________________
+Question 2:
+What does this mean?
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET;
+✅ Answer:
+This reads environment variables from a .env file using dotenv.
+•	process.env is a global Node.js object that stores environment variables.
+•	You use them for sensitive data (secrets, keys, configs) so they’re not hardcoded.
+Example .env file:
+PORT=5000
+JWT_SECRET=mySecretKey123
+🧠 Summary:
+Variable	Purpose
+PORT	Port number on which Express runs
+JWT_SECRET	Secret key for signing JWTs
+process.env	Object that stores all environment variables
+dotenv.config()	Loads .env values into process.env
+________________________________________
+Question 3:
+What does this line do?
+const token = jwt.sign(
+  { id: user.id, email: user.email },
+  JWT_SECRET,
+  { expiresIn: "1h" }
+);
+✅ Answer:
+This creates a JWT (JSON Web Token) that encodes the user’s info securely.
+Part	Meaning
+{ id, email }	Payload — data about user
+JWT_SECRET	Secret key used to sign token
+{ expiresIn: "1h" }	Options — defines expiry time (1 hour)
+________________________________________
+🔍 Example Decoded Token:
+{
+  "id": 1,
+  "email": "user@example.com",
+  "iat": 1761755260,
+  "exp": 1761758860
+}
+Field	Description
+id, email	Custom data (payload)
+iat	Issued At time (when token created)
+exp	Expiration time (when token expires)
+________________________________________
+Question 4:
+What are iat and exp in the JWT payload?
+✅ Answer:
+They are standard JWT claims:
+Claim	Meaning	Example
+iat	Issued At — time when token was created	1761755260
+exp	Expiration — when token expires	1761758860
+They are automatically generated when you use expiresIn in jwt.sign().
+🧩 How it Works
+•	iat = current time (in seconds)
+•	exp = iat + 3600 (if 1 hour expiry)
+If current time > exp, the token is invalid.
+________________________________________
+Question 5:
+What happens if token is expired?
+✅ Answer:
+When verifying:
+jwt.verify(token, JWT_SECRET, (err, decoded) => {
+  if (err) return res.status(403).json({ message: "Invalid or expired token" });
+});
+If expired, the library returns:
+{ "name": "TokenExpiredError", "message": "jwt expired" }
+This lets you handle logout or refresh token logic.
+________________________________________
+Question 6:
+What’s the payload size limit?
+✅ Answer:
+There’s no strict RFC limit, but practical limits depend on browser/proxy.
+Recommendation	Reason
+Keep under 1–2 KB	HTTP header limit ~8 KB
+Store only essential data	Avoid large user objects
+________________________________________
+Question 7:
+Why use async and await in:
+const passwordHash = await bcrypt.hash(password, 10);
+✅ Answer:
+bcrypt.hash() is an asynchronous function (it runs in background because hashing is CPU heavy).
+Using await:
+•	Pauses code until hashing is done
+•	Prevents blocking the main event loop
+•	Allows easy error handling via try/catch
+If you remove await, it returns a Promise, not the hashed value.
+Example:
+// ❌ Wrong
+const passwordHash = bcrypt.hash(password, 10); 
+console.log(passwordHash); // Promise { <pending> }
+
+// ✅ Correct
+const passwordHash = await bcrypt.hash(password, 10);
+console.log(passwordHash); // "$2b$10$kQ..."
+________________________________________
+Question 8:
+What is the purpose of this middleware?
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "Token missing" });
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ message: "Invalid token" });
+    req.user = user;
+    next();
+  });
+}
+✅ Answer:
+It verifies if the incoming request has a valid JWT.
+Step	Action
+1	Reads the token from header (Authorization: Bearer <token>)
+2	If missing → return 401
+3	Verifies token using jwt.verify()
+4	If invalid → return 403
+5	If valid → attach decoded data to req.user and call next()
+Used to protect routes like /profile.
+________________________________________
+Question 9:
+Why not use Passport.js here?
+✅ Answer:
+Passport.js is a library that provides pre-built authentication strategies for:
+•	Local username/password
+•	JWT
+•	OAuth (Google, Facebook, etc.)
+•	SAML, LDAP, etc.
+Your current code manually handles JWT verification.
+Passport-JWT can do this automatically with less manual logic.
+Approach	Description
+Manual (your code)	Use jsonwebtoken directly, custom logic
+Passport-JWT	Uses pre-defined strategy to extract, verify, and attach user
+So you don’t need Passport for simple JWT APIs — it’s optional.
+________________________________________
+Question 10:
+What is a Passport Strategy?
+✅ Answer:
+A Strategy in Passport defines how authentication should happen.
+Examples:
+Strategy	Used For
+passport-local	Username/password login
+passport-jwt	Token-based API authentication
+passport-google-oauth20	Google OAuth login
+passport-azure-ad	Azure Active Directory
+Each strategy defines:
+•	How to extract credentials
+•	How to validate user
+•	What happens if valid/invalid
+________________________________________
+Question 11:
+Why use environment variables for JWT_SECRET?
+✅ Answer:
+You never store secrets directly in code (to prevent leaks in GitHub).
+Using .env ensures they’re loaded securely at runtime.
+Example .env:
+JWT_SECRET=super_secret_key
+PORT=5000
+________________________________________
+Question 12:
+What happens inside a JWT verification?
+✅ Answer:
+1.	JWT is split into 3 parts:
+2.	header.payload.signature
+3.	Signature is checked using the secret key.
+4.	If valid and not expired → payload decoded.
+5.	If invalid → error returned (invalid signature / expired).
+________________________________________
+Question 13:
+Summary of the JWT flow
+Step	Process	Example
+1️⃣	User registers	/register — password hashed using bcrypt
+2️⃣	User logs in	/login — token generated
+3️⃣	Token returned	Client stores it (usually in localStorage or cookies)
+4️⃣	Client requests protected API	Sends token in header
+5️⃣	Server verifies	authenticateToken() middleware
+6️⃣	If valid	Request continues → user data available in req.user
+
